@@ -9,6 +9,11 @@ from colorama import Fore
 from discord.ext import commands
 
 intents = discord.Intents.default()
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 client = discord.Client(intents=intents, self_bot=True)
 
 text = """
@@ -53,6 +58,10 @@ cmds_messages = []
 ar_target_id = None
 ar_message = None
 ar_channel_id = None
+# Add this to your global variables at the top
+spam_enabled = False
+spam_message = []
+spam_prefix = ""  # Character/text to add before each line
 
 async def get_user_id():
     user = await client.fetch_user("@me")
@@ -87,13 +96,82 @@ async def on_message(message):
         except discord.HTTPException as e:
             print(f"Failed To Send Auto Response: {e}")
 
+
     elif message.content.startswith(",fill"):
+
+        parts = message.content.split(maxsplit=1)
+
+        # Check if a prefix was provided
+
+        if len(parts) > 1:
+
+            spam_prefix = parts[1] + " "  # Add space after prefix
+
+        else:
+
+            spam_prefix = ""  # No prefix
+
         spam_enabled = True
-        with open("spam.txt", "r") as file:
-            spam_message = file.read()
-        for _ in range(600000):
-            await message.channel.send(spam_message)
-            await asyncio.sleep(delay)
+
+        try:
+
+            with open("spam.txt", "r", encoding="utf-8") as file:
+
+                spam_message = [line.strip() for line in file if line.strip()]
+
+            await message.channel.send(f"Spam started with prefix: '{spam_prefix.strip()}' - Use ,stop to stop")
+
+            print(Fore.GREEN + f"[LOG] Spam started with {len(spam_message)} lines" + Fore.RESET)
+
+            for _ in range(600000):
+
+                if not spam_enabled:  # Check if stopped
+
+                    await message.channel.send("Spam stopped.")
+
+                    print(Fore.YELLOW + "[LOG] Spam stopped by user" + Fore.RESET)
+
+                    break
+
+                for line in spam_message:
+
+                    if not spam_enabled:  # Check again inside inner loop
+
+                        break
+
+                    full_message = spam_prefix + line
+
+                    if len(full_message) <= 2000:
+
+                        await message.channel.send(full_message)
+
+                        await asyncio.sleep(delay)
+
+                    else:
+
+                        print(Fore.RED + f"[WARN] Skipped line (too long): {full_message[:50]}..." + Fore.RESET)
+
+            else:
+
+                await message.channel.send("Spam finished all 600000 cycles.")
+
+
+        except FileNotFoundError:
+
+            await message.channel.send("Error: spam.txt file not found.")
+
+            print(Fore.RED + "[ERROR] spam.txt not found" + Fore.RESET)
+
+
+    elif message.content.startswith(",stop"):
+        if spam_enabled:
+            spam_enabled = False
+            await message.channel.send("Stopping spam...")
+            print(Fore.YELLOW + "[LOG] Spam stop command received" + Fore.RESET)
+        else:
+            await message.channel.send("No spam is currently running.")
+
+
     elif message.content.startswith(",setemoji"):
         args = message.content.split()
         if len(args) > 1:
@@ -163,7 +241,8 @@ async def on_message(message):
             ",credit : Show Credits",
         ]
         chatpacking_list = [
-            ",fill : Spam message from spam.txt file 600000 times",
+            ",fill [prefix] : Spam messages from spam.txt (optional prefix before each line)",
+            ",stop : Stop the current spam",
             ",setemoji <emojis> : Set auto-react emojis",
             ",react <@user> : Set auto reaction target user",
             ",reactstop : Stop auto reactions",
